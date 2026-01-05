@@ -1,0 +1,237 @@
+generator client {
+  provider        = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  schemas  = ["msgmanager"]
+}
+
+//TCN Messaging Manager
+model User {
+  id            String         @id @default(cuid())
+  email         String         @unique
+  password      String
+  first_name    String
+  last_name     String
+  created       DateTime       @default(now())
+  updated       DateTime  @default(now()) @updatedAt
+  department    Department     @default(BAND_OFFICE)
+  role          UserRole       @default(STAFF)
+  
+  // Authentication fields
+  pin           String?        // 6-digit PIN for password reset
+  pinExpiresAt  DateTime?      // PIN expiration time
+  lastLogin     DateTime?      // Track last login
+  loginAttempts Int           @default(0) // Track failed login attempts
+  lockedUntil   DateTime?     // Account lockout until this time
+  
+  // Password reset tracking
+  passwordResetRequested DateTime?
+  passwordResetCompleted DateTime?
+
+  emails        EmailLog[]
+  staffemail    StaffEmailLog[]
+  bulletin      BulletinApiLog[]
+  sessions      Session[]
+  smslog        SmsLog[]
+  msgcnc        MsgCnC[]
+  loginLogs     LoginLog[]
+  @@schema("msgmanager")
+}
+
+// Login history log
+model LoginLog {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  loginTime   DateTime  @default(now())
+  department  Department
+  ipAddress   String?
+  userAgent   String?
+  success     Boolean   @default(true)
+  failReason  String?
+  @@schema("msgmanager")
+}
+
+enum UserRole {
+  STAFF
+  STAFF_ADMIN
+  ADMIN
+  CHIEF_COUNCIL
+  @@schema("msgmanager")
+}
+
+enum Department {
+  BAND_OFFICE
+  J_W_HEALTH_CENTER
+  CSCMEC
+  COUNCIL
+  RECREATION
+  UTILITIES
+  @@schema("msgmanager")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  created      DateTime @default(now())
+  updated       DateTime  @default(now()) @updatedAt
+  access_token String?
+  refresh_token String?
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@schema("msgmanager")
+}
+
+model SmsLog {
+  id         String   @id @default(cuid())
+  created    DateTime @default(now())
+  updated       DateTime  @default(now()) @updatedAt
+  message    String
+  recipients String[]
+  status     String
+  messageIds String[]
+  error      String?
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@schema("msgmanager")
+}
+model EmailLog {
+  id          String   @id @default(cuid())
+  created     DateTime @default(now())
+  updated     DateTime  @default(now()) @updatedAt  
+  subject     String
+  message     String    @db.Text
+  recipients  String[]
+  status      String
+  messageId   String?
+  error       String?   @db.Text
+  attachments Json?
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@schema("msgmanager")
+}
+
+model StaffEmailLog {
+  id          String   @id @default(cuid())
+  created     DateTime @default(now())
+  updated     DateTime @updatedAt
+  subject     String
+  message     String
+  recipients  String[]
+  status      String
+  messageId   String?
+  error       String?
+  attachments Json?
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@schema("msgmanager")
+}
+model BulletinApiLog {
+  id          String    @id @default(cuid())
+  title       String
+  subject     String
+  poster_url  String
+  category    Categories @default(CHIEFNCOUNCIL)
+  userId      String
+  User        User      @relation(fields: [userId], references: [id])
+  created     DateTime   @default(now())
+  updated     DateTime   @default(now()) @updatedAt
+  @@schema("msgmanager")
+}
+model MsgCnC {
+  id          String    @id @default(cuid())
+  title       String
+  content     String
+  priority    String
+  type        String    @default("notice")
+  created     DateTime  @default(now())
+  expiryDate  DateTime?
+  isPublished Boolean   @default(false)
+  userId      String
+  User        User      @relation(fields: [userId], references: [id])
+  date        DateTime
+  time        DateTime
+  location    String
+  @@schema("msgmanager")
+}
+
+enum Categories{
+  CHIEFNCOUNCIL
+  HEALTH
+  EDUCATION
+  RECREATION
+  EMPLOYMENT
+  PROGRAM_EVENTS
+  ANNOUNCEMENTS
+  @@schema("msgmanager")
+}
+
+// ==========================================
+// Sign-Up Forms Feature
+// ==========================================
+
+model SignUpForm {
+  id           String    @id @default(cuid())
+  portalFormId String?   @unique // ID of form on TCN Portal (for sync)
+  title        String
+  description  String?   @db.Text
+  deadline     DateTime?
+  maxEntries   Int?
+  isActive     Boolean   @default(true)
+  createdBy    String    // User ID who created the form
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  syncedAt     DateTime? // Last successful sync to portal
+  
+  fields      FormField[]
+  submissions FormSubmission[]
+  @@schema("msgmanager")
+}
+
+model FormField {
+  id          String    @id @default(cuid())
+  formId      String
+  form        SignUpForm @relation(fields: [formId], references: [id], onDelete: Cascade)
+  
+  fieldId     String?          // Semantic field ID for auto-fill matching (e.g., 'full_name', 'email')
+  label       String           // Field label e.g. "T-Shirt Size"
+  fieldType   FieldType        // TEXT, SELECT, CHECKBOX, DATE, etc.
+  options     String?          // JSON for select options: ["S","M","L","XL"]
+  placeholder String?          // Placeholder text
+  required    Boolean   @default(false)
+  order       Int              // Display order
+  
+  @@schema("msgmanager")
+}
+
+model FormSubmission {
+  id          String    @id @default(cuid())
+  formId      String
+  form        SignUpForm @relation(fields: [formId], references: [id], onDelete: Cascade)
+  
+  memberId    Int?             // Link to Members table if known
+  name        String
+  email       String?
+  phone       String?
+  responses   Json             // {"field_id": "value", ...}
+  submittedAt DateTime  @default(now())
+  
+  @@schema("msgmanager")
+}
+
+enum FieldType {
+  TEXT
+  TEXTAREA
+  SELECT
+  MULTISELECT
+  CHECKBOX
+  DATE
+  NUMBER
+  EMAIL
+  PHONE
+  @@schema("msgmanager")
+}
